@@ -60,20 +60,23 @@ npm run lint && npm test     # 补丁失效时测试/语法检查会先叫
 | `LOCAL-1-directory-flow-two-step` | `lib/client.js` | 该部署的目录选择器只组装 `browse` 能力；上游的"添加工作区"占用 `directoryFlow` 槽位（`priority: -100`）后，"本地"分支先调 `uiWorkspace.pickDirectory()`，报 `directoryPicker.pick needs the native capability`，同时把可用的原生 browse 面板盖住 | 恢复 `directoryFlow` 双槽位注册：第一步是本地/远程二选一菜单；**本地**不再先调 picker，而是从 `ctx.slots.entries(hole)` 取已安装 browse occupant 自己的组件与注入（同一个对话框、同一套 locale 与列目录调用）按 owner 对话渲染，只有部署里没有 browse occupant 时才回落 `pick()`（桌面 preload 桥 / `uiWorkspace.pickDirectory()`）；**远程**保持原有主机选择 + 远程目录浏览 + 挂载 | DSH 给 flow occupant 提供正式的"交给已安装 browse 流"入口（例如 picker 服务的 `browse.open`、或单槽位的"让位给下一个 occupant"API），或上游"本地"分支自己能识别能力并复用 browse 时；届时删掉 `resolveBrowseFlow` 辅助与 `localFlow` 注入，本地分支回到 `pick()` |
 | `LOCAL-2-sandbox-wrapper-prefix` | `lib/patch-subprocess.js` | `workspace-write` 下 DSH 把命令包成 `[landlock-run, …grants, '--', cmd, …]`，桥只按 `argv[0]` 的 basename 做 git/rg 白名单，于是抛 `cannot run …/landlock-run with a remote ssh:// cwd — only git and ripgrep (rg) are supported` | 按沙箱约定在 `'--'` 处剥掉启动器前缀再走白名单；只对 `landlock-run` / `bwrap` / `sandbox-exec` 生效，**不**改成"找第一个 git/rg"（会误匹配 `--ro-bind /usr/bin/rg` 这类授权路径） | 宿主给 `ctx.subprocess` 提供"逻辑 argv"（沙箱包装对 remote 目标自动跳过），或桥能拿到未包装的命令时 |
 
+| `LOCAL-3-undefined-env` | `lib/patch-subprocess.js` | Forge 面板用 16 个 `GIT_* = undefined` 清掉继承的 Git 选择器。Node 的 spawn 把 `undefined` 当"不设置变量"，远端桥却把 env 序列化成 `export KEY=...` 并用 `String(value)` 强转，于是导出 `GIT_DIR='undefined'`；远端 git 把 `GIT_DIR` 当 `./undefined`，exit 128 `fatal: not a git repository: 'undefined'`，面板显示「当前目录不是 Git 仓库」 | `buildScript()` 的 env 循环跳过 `undefined` 值（保持 Node 的 unset 语义）；`null` 等其它值保持原有强转语义，argv/cwd 翻译不动 | 上游 `buildScript()` 同样跳过 `undefined`（或宿主给桥提供"逻辑 env"）时；删补丁 + `tests/remote-git-env-smoke.mjs` + `docs/remote-git-diagnosis.md` 登记 |
+
 **退役记录**：`LOCAL-1-directory-flow-shadow`（用 `REGISTER_DIRECTORY_FLOW = false` 整个关掉
 `directoryFlow`）已退役——它解决了"报错"，但代价是二选一菜单和远程建工作区入口一起消失。
 现在由上面 `LOCAL-1-directory-flow-two-step` 取代，upstream 的 flow 注册与远程分支重新生效。
 
-两条有效补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
+三条有效补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
 远端执行；browse occupant 的组件只在本部署的 DSH 组合里注册，且只经它的**原始**槽位条目
-（`component` + `inject`）复用，不复制对话框实现。
+（`component` + `inject`）复用，不复制对话框实现；`undefined` env 的语义差只存在于"本地 spawn →
+远端 `export`"这条转换里。
 
 ## 5. 改完怎么生效
 
 | 改动 | 生效方式 |
 | --- | --- |
-| `lib/client.js`（浏览器侧） | 刷新页面（客户端模块由 Host 从本目录读取；HMR 接收器在，但自动热更未验证，刷新最稳） |
-| 其它 `lib/*.js`（Host 侧） | 插件安装/卸载会即时重载；**直接改文件**不一定被感知。没生效就 `systemctl restart dsh-web`（会断开当前页面连接，重连即可；会话与工作区记录保存在 `$DSH_HOME`） |
+| `lib/client.js`（浏览器侧） | 浏览器模块图在宿主启动时按文件内容算 `rev` 并缓存包体，刷新页面即可拿到新版本（浏览器若仍用旧缓存就 Ctrl+Shift+R） |
+| 其它 `lib/*.js`（Host 侧） | **必须重启宿主**：本 profile 的 hmr 配置是 `root: []`（`@deepseek-ai/dsh-base/cordis.patch.yml` 的 `hmr` 行），宿主侧源码不做热重载，运行中的进程一直持有旧模块——刷新浏览器不够 |
 | `package.json` 依赖 | `npm ci --omit=dev --cache ./.npm-cache`，再重启 host |
 
 重启命令（本机部署方式见 `/etc/systemd/system/dsh-web.service`）：
