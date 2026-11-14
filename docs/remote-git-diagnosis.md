@@ -218,13 +218,17 @@ $ npm test
 
 ## 8. 残留风险与未处理项
 
-1. **宿主进程需要加载新代码才生效**。`dsh web`（systemd `dsh-web.service`）在本机
-   07:00:56 启动，而插件 host 端模块是在启动时 `import` 的；浏览器端 `lib/client.js`
-   的 HMR 只更新客户端 bundle，管不到 host 端的 `lib/patch-subprocess.js`。
-   本次任务约定不重启宿主，因此**验证时如果面板仍报旧结论**，说明当前进程还持有旧模块，
-   需要重启 `dsh-web.service`（或宿主自身的插件热重载）后才看得到修复。
-   判断依据：修复生效后该面板应显示分支 `fix/rwkv7-api-compat`、commit `7f9fc618f`、
-   remote `origin/…`，而不是「当前目录不是 Git 仓库」。
+1. **必须重启宿主才生效，刷新浏览器不够**。本补丁只改 host 端
+   `lib/patch-subprocess.js`：`dsh web`（systemd `dsh-web.service`）在启动时 `import`
+   插件模块，而本 profile 没有启用 HMR 的源码模块监听——base 组合包把 `hmr` 条目配成
+   `root: []`（`@deepseek-ai/dsh-base/cordis.patch.yml` 的 `hmr` 段），
+   `dsh-hmr` 文档把 `[]` 定义为「仅保留显式注册的配置监听」，即模块源码变化不进热重载；
+   profile 的 `$DSH_HOME/profiles/web/cordis.patch.yml` 也没有覆盖该 `root`。
+   浏览器端 HMR 只更新客户端 bundle，管不到这段代码。
+   本次任务约定不重启宿主，因此**验收时需要重启 `dsh-web.service`**（会中断现有会话，
+   由用户/Lead 决定时机）。重启后该面板应显示分支 `fix/rwkv7-api-compat`、
+   commit `7f9fc618f`、remote `origin/…`，而不是「当前目录不是 Git 仓库」。
+   若重启前仍看到旧提示，是旧模块仍在进程里，不是修复失效。
 2. **Forge 的「本地变更」卡片在远端工作区仍不可用（与本次缺陷无关）**。
    `localChanges()` 把后续 git 绑定到 `inspection.checkout.root`（`…/index.js:755-760`），
    而 `root` 来自 `ctx.fs.processPath()`，远端目标被剥成不带 `ssh://` 的
