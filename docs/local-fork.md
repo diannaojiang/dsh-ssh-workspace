@@ -1,6 +1,7 @@
 # 本地 fork：本仓库是 `@shiqyka/dsh-ssh-workspace` 的本地源码树
 
-> 状态（2026-11-14）：基于上游 **v0.3.3**（`0cd4caf`）的 fork，分支 `local` 带 2 个本地提交。
+> 状态（2026-11-14）：基于上游 **v0.3.3**（`0cd4caf`）的 fork，分支 `local` 带 3 个本地补丁提交
+> （另有 1 个登记文档提交）。
 > 运行中的 `web` profile 以 `link:` 依赖指向本目录——**改这里的文件就是改正在运行的插件**，
 > 系统里不存在第二份被手工改过的安装副本。
 
@@ -40,9 +41,9 @@ npm ci --omit=dev --cache ./.npm-cache    # 注意 --cache：本机沙箱不允�
 ## 3. 分支与上游同步
 
 ```bash
-git log --oneline            # 0cd4caf 上游 v0.3.3 → 上面两条即本地提交
+git log --oneline            # 0cd4caf 上游 v0.3.3 → 上面三条即本地补丁提交（第 2 条已被第 3 条取代）
 git fetch origin --tags      # 取上游新版本
-git rebase v0.3.x            # 把两个本地补丁搬到新上游上；冲突通常只在下面两个锚点
+git rebase v0.3.x            # 把本地补丁搬上新上游；flow 的两条是同一处锚点，冲突以最新一条为准
 npm run lint && npm test     # 补丁失效时测试/语法检查会先叫
 ```
 
@@ -56,11 +57,16 @@ npm run lint && npm test     # 补丁失效时测试/语法检查会先叫
 
 | id | 文件 | 症状 | 本地修法 | 什么时候可以删 |
 | --- | --- | --- | --- | --- |
-| `LOCAL-1-directory-flow-shadow` | `lib/client.js` | 该部署的目录选择器只组装 `browse` 能力，而插件以 `priority: -100` 抢占"添加工作区"槽位；其"本地"分支调用 `uiWorkspace.pickDirectory()`，报 `directoryPicker.pick needs the native capability`，同时把可用的原生 browse 面板盖住 | 用 `REGISTER_DIRECTORY_FLOW = false` gate 掉整个 `directoryFlow` 注册，让"添加工作区"完整交回 DSH 原生面板；远程工作区仍在插件面板（主机行→浏览目录→挂载此目录）与 `ssh_workspace_mount` 里 | 插件的"本地"分支能在 browse-only 部署里复用原生 browse 面板（或 DSH 的 picker 组合提供 `native`）时；删掉 gate 并把该常量设为 `true` |
+| `LOCAL-1-directory-flow-two-step` | `lib/client.js` | 该部署的目录选择器只组装 `browse` 能力；上游的"添加工作区"占用 `directoryFlow` 槽位（`priority: -100`）后，"本地"分支先调 `uiWorkspace.pickDirectory()`，报 `directoryPicker.pick needs the native capability`，同时把可用的原生 browse 面板盖住 | 恢复 `directoryFlow` 双槽位注册：第一步是本地/远程二选一菜单；**本地**不再先调 picker，而是从 `ctx.slots.entries(hole)` 取已安装 browse occupant 自己的组件与注入（同一个对话框、同一套 locale 与列目录调用）按 owner 对话渲染，只有部署里没有 browse occupant 时才回落 `pick()`（桌面 preload 桥 / `uiWorkspace.pickDirectory()`）；**远程**保持原有主机选择 + 远程目录浏览 + 挂载 | DSH 给 flow occupant 提供正式的"交给已安装 browse 流"入口（例如 picker 服务的 `browse.open`、或单槽位的"让位给下一个 occupant"API），或上游"本地"分支自己能识别能力并复用 browse 时；届时删掉 `resolveBrowseFlow` 辅助与 `localFlow` 注入，本地分支回到 `pick()` |
 | `LOCAL-2-sandbox-wrapper-prefix` | `lib/patch-subprocess.js` | `workspace-write` 下 DSH 把命令包成 `[landlock-run, …grants, '--', cmd, …]`，桥只按 `argv[0]` 的 basename 做 git/rg 白名单，于是抛 `cannot run …/landlock-run with a remote ssh:// cwd — only git and ripgrep (rg) are supported` | 按沙箱约定在 `'--'` 处剥掉启动器前缀再走白名单；只对 `landlock-run` / `bwrap` / `sandbox-exec` 生效，**不**改成"找第一个 git/rg"（会误匹配 `--ro-bind /usr/bin/rg` 这类授权路径） | 宿主给 `ctx.subprocess` 提供"逻辑 argv"（沙箱包装对 remote 目标自动跳过），或桥能拿到未包装的命令时 |
 
-两条补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
-远端执行。
+**退役记录**：`LOCAL-1-directory-flow-shadow`（用 `REGISTER_DIRECTORY_FLOW = false` 整个关掉
+`directoryFlow`）已退役——它解决了"报错"，但代价是二选一菜单和远程建工作区入口一起消失。
+现在由上面 `LOCAL-1-directory-flow-two-step` 取代，upstream 的 flow 注册与远程分支重新生效。
+
+两条有效补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
+远端执行；browse occupant 的组件只在本部署的 DSH 组合里注册，且只经它的**原始**槽位条目
+（`component` + `inject`）复用，不复制对话框实现。
 
 ## 5. 改完怎么生效
 
