@@ -24,3 +24,6 @@ cl[0-9]*.py
 mutate.py
 docpatch.py
 inspect.py
+
+# 本机 npm 缓存（沙箱不允许写 /root/.npm，故缓存进仓库）
+.npm-cache/
