@@ -62,14 +62,20 @@ npm run lint && npm test     # 补丁失效时测试/语法检查会先叫
 
 | `LOCAL-3-undefined-env` | `lib/patch-subprocess.js` | Forge 面板用 16 个 `GIT_* = undefined` 清掉继承的 Git 选择器。Node 的 spawn 把 `undefined` 当"不设置变量"，远端桥却把 env 序列化成 `export KEY=...` 并用 `String(value)` 强转，于是导出 `GIT_DIR='undefined'`；远端 git 把 `GIT_DIR` 当 `./undefined`，exit 128 `fatal: not a git repository: 'undefined'`，面板显示「当前目录不是 Git 仓库」 | `buildScript()` 的 env 循环跳过 `undefined` 值（保持 Node 的 unset 语义）；`null` 等其它值保持原有强转语义，argv/cwd 翻译不动 | 上游 `buildScript()` 同样跳过 `undefined`（或宿主给桥提供"逻辑 env"）时；删补丁 + `tests/remote-git-env-smoke.mjs` + `docs/remote-git-diagnosis.md` 登记 |
 
+| `LOCAL-4-terminal-signal-lifetime` | `lib/patch-terminal.js` | 浏览器终端（侧边栏）打开后是**空白、敲不进命令**，而 `terminal_open` 工具正常。宿主把 `spec.signal` 定义为"取消本次分配"：本地后端只交给 node-pty 的 spawn，进程活过调用；而 `openChannel()` 把 signal 的 abort 直接接到 `channel.close()`。浏览器的 `terminal.create` 是一次 RPC，其 signal 在该 RPC 结束后就 abort，PTY 于是被立刻关闭 | 把 `spec.signal` 的作用域收到"打开阶段"：内部 AbortController 只在 channel 打开前转发 abort，打开后移除监听；PTY 的生命周期只由 `terminate()` / 通道关闭决定 | 宿主给 `spawnTerminal` 提供"只约束分配、不约束生命周期"的显式信号（或本地后端也开始把 signal 接到进程生命周期）时；届时恢复直接透传并删掉 `tests/terminal-smoke.mjs` 里两条信号用例 |
+
 **退役记录**：`LOCAL-1-directory-flow-shadow`（用 `REGISTER_DIRECTORY_FLOW = false` 整个关掉
 `directoryFlow`）已退役——它解决了"报错"，但代价是二选一菜单和远程建工作区入口一起消失。
 现在由上面 `LOCAL-1-directory-flow-two-step` 取代，upstream 的 flow 注册与远程分支重新生效。
 
-三条有效补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
+**临时诊断**：`lib/patch-terminal.js` 在终端生命周期各点追加一行到
+`/tmp/ssh-workspace-terminal.log`（`spawnTerminal cwd=… remote=…` / `open` / `opened` / `closed` /
+`spec.signal aborted`）。设 `DSH_SSH_WORKSPACE_TRACE=0` 关闭；LOCAL-4 定案后连同 trace 一起删除。
+
+四条有效补丁都**只在本部署的宿主行为下**成立：被剥掉的沙箱保护的是本机进程，而这些进程本来就在
 远端执行；browse occupant 的组件只在本部署的 DSH 组合里注册，且只经它的**原始**槽位条目
 （`component` + `inject`）复用，不复制对话框实现；`undefined` env 的语义差只存在于"本地 spawn →
-远端 `export`"这条转换里。
+远端 `export`"这条转换里；终端 signal 的语义差只存在于"本地 node-pty 分配 → SSH 通道"这条转换里。
 
 ## 5. 改完怎么生效
 
