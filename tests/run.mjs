@@ -104,6 +104,7 @@ const SUITES = [
   'local-passthrough',
   'lifecycle',
   'phase6',
+  'remote-git-env',
   'jump-chain',
   'jump-transport',
   'reverse-forward',

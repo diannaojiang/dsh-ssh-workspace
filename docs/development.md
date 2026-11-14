@@ -15,7 +15,7 @@
 | model-facing tools | 11 | `lib/tools.js` |
 | upstream patch modules | 5 | `lib/patch-*.js` |
 | modules under `lib/` | 49 | directory listing |
-| test suites | 83 | `tests/run.mjs` |
+| test suites | 84 | `tests/run.mjs` |
 | passing assertions (sampled) | 4091 | measured 2026-11-13 |
 
 <!-- doc-numbers:end -->
@@ -231,6 +231,7 @@ fail。`partial` 不计入 `passed`，也不计入 `failed`，退出码仍为 0�
 | `probe-smoke` | 无 | 20 | 内建桥三条身份探针无活连接时不拨号、挂载根外必须 `ENOENT`、有连接时取真实属性、broken 记录不算连接（直接数 `withSftp` / `acquire` 次数） |
 | `local-passthrough-smoke` | 无 | 88 | 本机路径直通：默认/展开/关闭、边界与 `..` 归一化、Windows 大小写（POSIX 跳过）、`path.resolve` 在远端 cwd 前直通且 `relative` 返回原路径、热重载换 matcher、`RemoteFileSystem.resolve` / `lstat` 剥离 cwd 防递归、未命中与已存在但未配置的本机文件仍远端、无本机后端报 `FS_IO_ERROR`；`@` 引用：引号/裸拼写提取（含全角标点截断、尾随分隔符、重复去重）、`addHostReference` 的 win32 门禁与整 `$DSH_HOME` 拒绝、目录点名覆盖子项、256 条先进先出淘汰；并静态校验接线与唯一实现 |
 | `phase6-smoke` | 无（有真框架时更全） | 36 | 失败与规模路径的回归：断连 close 不误判完成、rename 回退不误删目标、`listDir` 无 N+1 stat、`StreamTail` join 缓存 |
+| `remote-git-env-smoke` | 无 | 16 | 远端 subprocess 的 env 序列化回归：Node 对 `undefined` 环境项是「不设置该变量」，桥若把它导出成字符串 `undefined`，Forge 面板用来清 `GIT_*` 选择器的 `GIT_DIR: undefined` 会让远端 git 读到 `./undefined`、以 128 退出（`fatal: not a git repository`），面板于是把仓库误报成「当前目录不是 Git 仓库」；断言 undefined 键不导出、已定义键原样导出、cwd/argv 翻译不变 |
 | `watch-lifecycle-smoke` | 无 | 8 | 变更监视的降级与销毁：推送死了回退轮询之后，`close()` 必须连轮询那一支一起关掉——只关推送分支会把定时器、SFTP 轮询和连接持有者一直漏到进程结束 |
 | `watch-recovery-smoke` | 无 | 28 | 变更监视在断线后**不死**：策略表（连接健康 / 无重连循环 / 循环已放弃 → 上报；断线且循环在跑 → 重试）逐条执行而非 grep，退避阶梯有上限，真实 `watch()` 在链路断开时继续尝试、恢复后补一次重扫，而健康链路上的失败仍然上报并停止轮询 |
 | `watch-sharing-smoke` | 无 | 36 | 同目标跨订阅去重：注册表按 `alias + 规范化路径` 只保留一只底层 watcher，`changed` 逐消费者各扇出一次；关闭按引用计数，先关一个不影响另一个；push→poll 降级仍是替换而非叠加；`watchTargetCount` 可观测；真实 SSH socket 硬断、断链期间与自动重连后计数恒为 1，恢复后两侧各收到一次变更。反向验证三处分别 11 / 6 / 8 红 |
